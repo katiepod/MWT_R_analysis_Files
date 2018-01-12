@@ -1,0 +1,483 @@
+Choreography settings: 
+***********************
+
+2017_02_12
+java -XX:-DoEscapeAnalysis -Xmx6G -cp /Users/katiepodshivalova/Documents/Kenyon_Lab/Tracking_healthspan/Choreography/Chore.jar:/Users/katiepodshivalova/Documents/Kenyon_Lab/Tracking_healthspan/Choreography/scala-library.jar:/Users/katiepodshivalova/Documents/Kenyon_Lab/Tracking_healthspan/Choreography/IchiMwt.jar:/Users/katiepodshivalova/Documents/Kenyon_Lab/Tracking_healthspan/Choreography/jtransforms-2.4.jar:/Users/katiepodshivalova/Documents/Kenyon_Lab/Tracking_healthspan/Choreography/commons-math3-3.1.1.jar:/Users/katiepodshivalova/Documents/Kenyon_Lab/Tracking_healthspan/Choreography/Dejitter.jar Choreography -p 0.02577 -M 1 -t 30 --shadowless -S --plugin Dejitter --plugin Reoutline::exp --plugin Respine --plugin SpinesForward --plugin MultiSensed::report=bfnos -o number,goodnumber,persistence,length,width,midline,aspect,curve,speed,bias --target /Users/katiepodshivalova/Documents/Kenyon_Lab/KPCA021_Track_wo_FUDR/KPCA021_Choreography_out/Dejitter /Users/katiepodshivalova/Documents/Kenyon_Lab/KPCA021_Track_wo_FUDR/KPCA021_MWT_raw_data/TrackerA/Completed/$D
+
+1) Create a dataframe with all of the data:
+```{r}
+# List files:
+setwd("/Users/katiepodshivalova/Documents/Kenyon_Lab/KPCA021_Track_wo_FUDR/KPCA021_Choreography_out/Dejitter") # this is the dir that contains all of your .dat files
+file_list <- list.files(pattern = "\\.dat$")
+file_list <- file_list[file.info(file_list)$size!=0]
+
+# Write a function that will combine all the .dat files into a single dataframe
+# Each variable will be a factor and will be listed in its own column
+# For example my variables were: strain, FUDR, sample number, and tracker color
+# So, I added 5 extra columns to each file
+# You'll have to adjust this piece of code according to how many variables you have
+compile_data <- function(file_list){
+        dataset <- data.frame()
+        day_col <- vector()
+        strain_col <- vector()
+        FUDR_col <- vector()
+        sample_col <- vector()
+        tracker_col <- vector()
+
+        for (file in file_list){
+                day <- (strsplit(file, "_")[[1]])[1] # day is the first entry in a file name delimited by "_"
+                day <- gsub("^.{1}","", day) # remove the "d" in fron of "d1", "d2", etc.
+                day <- as.numeric(day) # convert day from character to numeric
+                strain <- (strsplit(file, "_")[[1]])[2] # strain is the second entry in a file name delimited by "_"
+                FUDR <- (strsplit(file, "_")[[1]])[3] # FUDR is the third entry in a file name delimited by "_"
+                sample <- (strsplit(file, "_")[[1]])[4] # sample number is the fourth entry in a file name delimited by "_"
+                tracker <- (strsplit(file, "_")[[1]])[5] # tracker color is the fifth entry in a file name delimited by "_"
+                
+                temp_dataset <- read.table(file, header=FALSE) # read each file in the list of files
+                day_col <- c(day_col, rep(day,length(temp_dataset[,1]))) # create a column that corresponds to the day
+                strain_col <- c(strain_col, rep(strain,length(temp_dataset[,1]))) # same but for strain, FUDR, etc...
+                FUDR_col <- c(FUDR_col, rep(FUDR,length(temp_dataset[,1])))
+                sample_col <- c(sample_col, rep(sample,length(temp_dataset[,1]) ))
+                tracker_col <- c(tracker_col, rep(tracker,length(temp_dataset[,1]) ))
+                dataset <- rbind(dataset, temp_dataset) # add the results from each file to the growing dataframe
+                rm(temp_dataset)   
+        }
+        dataset <- cbind(dataset, day_col, strain_col, FUDR_col, sample_col, tracker_col) # combine your dataframe with the extra columns you created
+        
+        
+        # Give column names to your dataframe
+        # This is where it's important to remember the order in which you output different parameters using choreography
+        # Also create names for the new columns you created
+        colnames(dataset) <- c("Time", "Number", "Goodnumber","Persistence","Length","Width","Midline","Aspect","Curve","Speed","Bias","Day","Strain","FUDR", "PlateNum", "Tracker")
+        dataset$Day <- factor(dataset$Day)
+        print(dataset)
+  
+}
+
+# Run the function you've just created
+# Save output to a new object called "dataset"
+dataset <- compile_data(file_list)
+dataset$Tracker <- sub(".dat","", dataset$Tracker) # remove the .dat
+# If you have any typos, fix them like this:
+levels(dataset$FUDR)[levels(dataset$FUDR)=="wth"] <- "with"
+# Convert tracker to a factor
+dataset$Tracker <- factor(dataset$Tracker)
+
+# Save your dataset for future use
+save(dataset,file="KPCA021_dat_dataset_dejitter.Rda")
+# You can load it like this next time:
+load("/Users/katiepodshivalova/Documents/Kenyon_Lab/KPCA021_Track_wo_FUDR/MeanAnalysis/Dejitter/KPCA021_dat_dataset_dejitter.Rda")
+```
+
+2.1) Plot a parameter of all conditions over the course of tracking:
+```{r}
+library(ggplot2)
+
+dataset1 <- dataset[dataset$Strain == "e1370",]
+ggplot()+
+        geom_point(data=dataset1, aes(x = Time, y = Speed, color=Tracker), alpha=0.8, size=0.02)+
+        #ggtitle("N2E") +
+        #scale_color_manual(values=c("orange","blue","red"),labels=c("backward", "forward", "omega"))+
+        xlab("Time (s)")+
+        ylab("Mean speed")+
+        #theme(panel.margin = unit(1, "lines"))+
+        #theme(axis.text=element_text(size=3), axis.title=element_text(size=3,face="bold"), strip.text=element_text(size=3))+
+        #coord_cartesian(ylim=c(0,0.4))
+        theme_bw()+
+        theme(axis.line = element_line(colour = "black"),
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          panel.border = element_blank(),
+          panel.background = element_blank(),
+          axis.text = element_text(size = 8))+
+        facet_grid(Day ~ FUDR, labeller=label_both)
+        # scale_x_continuous(breaks=seq(0,1260,300))
+ggsave("Speed_over_Time_e1370.png", width=12, height=10)
+```
+
+2.2) Plot a parameter of 1 condition over the course of tracking 
+```{r}
+dataset2 <- dataset[dataset$Strain == "N2E",]
+dataset2 <- dataset2[dataset2$FUDR=="with",]
+dataset2 <- dataset2[dataset2$Day=="16",]
+
+ggplot()+
+  geom_point(data=dataset2, aes(x=Time, y=Speed, color=PlateNum), size=0.001)+
+  xlab("Time (s)")+
+  ylab("Mean speed (mm/s)")+
+  scale_x_continuous(breaks=seq(0,960,50))+
+  theme_bw()+
+  theme(
+          axis.line = element_line(colour = "black"),
+          # panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          # panel.border = element_blank(),
+          panel.background = element_blank(),
+          axis.text = element_text(size = 10))
+# ggsave("Speed_d13_N2E_withoutFUDR_over_Time.png", width=12, height=10)  
+```
+
+
+3) Plot disbributions (box and whiskers plot OR dot plots) of a feature for each day:
+```{r}
+subset <- dataset[dataset$Time>700&dataset$Time<890,]
+
+library(plyr)
+subset <- ddply(subset, .(Strain, FUDR, Day), function(d){ 
+                Q1=quantile(d[,"Speed"], 1/4, na.rm=TRUE)
+                Q3=quantile(d[,"Speed"], 3/4, na.rm=TRUE)
+                IQR=Q3-Q1
+                upper.limit=Q3+1.5*IQR
+                lower.limit=Q1-1.5*IQR
+                d[(d[,"Speed"] - lower.limit)*(upper.limit - d[,"Speed"]) > 0,]
+        })
+
+subset <- subset[subset$Day=="1" | subset$Day=="2"| subset$Day=="3"| subset$Day=="5"| subset$Day=="7"| subset$Day=="9",]
+# Some speeds are 0 (tracker didn't work; remove these)
+# hist(subset[subset$Strain=="N2E"&subset$Day=="2"&subset$FUDR=="with"&subset$Tracker=="A","Speed"])
+subset <- subset[subset$Speed != 0,]
+
+library(ggplot2)
+    ggplot()+
+    geom_boxplot(data=subset, aes(x=Strain, y=Speed, color=Strain), size=0.3, outlier.shape = NA)+
+    # geom_jitter(data=subset, aes(x=FUDR, y=Speed, color=FUDR),position = position_jitter(width = 0.6), alpha=0.5)+
+    scale_y_continuous(limits=c(0, 0.24))+
+    xlab("Days")+
+    ylab(" Mean speed (mm/s) \n")+
+    ggtitle("700 - 800 s \n")+
+    scale_fill_manual(name="Strain",
+                          breaks=c("N2E","e1368","e1370"),
+                          labels=c("N2","daf-2(e1368)","daf-2(e1370)"),
+                          values=c('black','green3','magenta'))+
+     scale_color_manual(name="Strain",
+                          breaks=c("N2E","e1368","e1370"),
+                          labels=c("N2","daf-2(e1368)","daf-2(e1370)"),
+                          values=c('black','green3','magenta'))+
+    theme_bw()+
+    theme(axis.text.x = element_blank(),
+          axis.ticks=element_blank(),
+          text = element_text(size=12),
+          axis.text = element_text(color="black"),
+          legend.key = element_rect(fill = "white"))+
+       facet_grid(FUDR~Day)
+    # ggsave("Boxplots_Speed_900-901_s_by_Strain.pdf", width =20, height = 15, dpi=300)
+    # ggsave("Boxplots_Speed_700-890_s_by_FUDR_d1-9.pdf", width =20, height = 10, dpi=300)
+rm(subset)
+```
+
+4.1) Calculate feature means and sd/s.e.m. for each day:
+```{r}
+# Define a function and then run the function using the parameters of your choosing
+feature_means <- function(start=0, end=1260, feature="Speed", variance="se", norm="self"){
+        time_interval <- dataset[dataset[,"Time"]>start&dataset[,"Time"]<end,]
+        
+  # Remove feature outliers using: [Q1 - 1.5 * IQR, Q3 + 1.5 * IQR] b/c some data isn't normal:          
+        library(plyr)
+        rm_outliers <- ddply(time_interval, .(Strain, FUDR, Day), function(d){ 
+                Q1=quantile(d[,feature], 1/4, na.rm=TRUE)
+                Q3=quantile(d[,feature], 3/4, na.rm=TRUE)
+                IQR=Q3-Q1
+                upper.limit=Q3+1.5*IQR
+                lower.limit=Q1-1.5*IQR
+                d[(d[,feature] - lower.limit)*(upper.limit - d[,feature]) > 0,]
+        })
+        
+# Calculate feature means and variance:
+  # If want SD:
+        if (variance=="sd"){
+          chron_feature <- ddply(rm_outliers, .(Strain, FUDR, Day),function(d){
+              mean = mean(d[,feature],na.rm=TRUE)
+              sd = sd(d[,feature], na.rm=TRUE)
+              c(mean,sd)
+              })
+          colnames(chron_feature) <- c("Strain","FUDR","Day","mean","sd")
+        }
+  # If want SE:       
+        if (variance=="se"){
+          chron_feature <- ddply(rm_outliers, .(Strain, FUDR, Day),function(d){
+              mean = mean(d[,feature],na.rm=TRUE)
+              se=sd(d[,feature], na.rm=TRUE)/sqrt(mean(d[,"Goodnumber"]))
+              N = mean(d[,"Goodnumber"])
+              c(mean,se,N)
+            })  
+          colnames(chron_feature) <- c("Strain","FUDR","Day","mean","se","N")
+        }
+        
+  # Re-format and save feature means and variance dataframe:    
+        chron_feature$Day <- as.numeric(levels(chron_feature$Day))[chron_feature$Day]
+        chron_feature <- chron_feature[complete.cases(chron_feature),] #remove NAs
+        chron_feature$Day <- chron_feature$Day-1 # Set Day 1 as Day 0 
+        chron_feature$Strain <- factor(chron_feature$Strain, levels=c("N2E", "e1368", "e1370"))
+        chron_feature$FUDR <- factor(chron_feature$FUDR, levels=c("with", "without"))
+        do.call("<<-",list(paste(c(feature, "_", start,"_",end,"_s"), collapse=""), chron_feature))
+        
+        
+  # Normalize feature to day 1 (day 2 if start counting from 0):
+        daily_mean <- ddply(rm_outliers, .(Strain, FUDR, Day),function(d){
+            d1_mean=mean(d[,feature], na.rm=TRUE)
+            })
+        colnames(daily_mean) <- c("Strain","FUDR","Day","d1_mean")
+        
+  # If want to normalize to d1 of each Strain:FUDR combination:
+      if (norm=="self"){
+        daily_mean <- daily_mean[daily_mean$Day==1,]
+        daily_mean <- subset(daily_mean, select = -Day)
+        rm_outliers <- merge(rm_outliers, daily_mean, by=c("Strain","FUDR"))
+        rm_outliers$norm_to_d1 <- rm_outliers[,feature]/rm_outliers[,"d1_mean"]        
+      }
+  # If want to normalize all features to N2E with FUDR on d1:
+      else {
+        daily_mean <- daily_mean[daily_mean$Day==1&daily_mean$Strain=="N2E"&daily_mean$FUDR=="with",] 
+        rm_outliers$norm_to_d1 <- rm_outliers[,feature]/daily_mean[,"d1_mean"]
+      }
+  # If want SD:
+        if (variance=="sd"){
+          chron_feature_norm_d1 <- ddply(rm_outliers, .(Strain, FUDR, Day), summarise, mean = mean(norm_to_d1,na.rm=TRUE), sd = sd(norm_to_d1, na.rm=TRUE))
+        }
+  # if want SE:
+        if (variance=="se"){
+          chron_feature_norm_d1 <- ddply(rm_outliers, .(Strain, FUDR, Day), summarise, mean = mean(norm_to_d1,na.rm=TRUE), se=sd(norm_to_d1, na.rm=TRUE)/sqrt(mean(Goodnumber)), N = mean(Goodnumber))
+        }
+  # Re-format and save feature means and variance dataframe:        
+        chron_feature_norm_d1$Day <- as.numeric(levels(chron_feature_norm_d1$Day))[chron_feature_norm_d1$Day]
+        chron_feature_norm_d1 <- chron_feature_norm_d1[complete.cases(chron_feature_norm_d1),] #remove NAs
+        chron_feature_norm_d1$Day <-  chron_feature_norm_d1$Day-1 # Set Day 1 as Day 0 
+        chron_feature_norm_d1$Strain <- factor(chron_feature_norm_d1$Strain, levels=c("N2E", "e1368", "e1370"))
+        chron_feature_norm_d1$FUDR <- factor(chron_feature_norm_d1$FUDR, levels=c("with", "without"))
+        do.call("<<-",list(paste(c(feature,"_",start,"_",end,"_s","_norm_to_d1"), collapse=""), chron_feature_norm_d1))
+
+        #Save as an excel spreadsheet
+        # library(xlsx)
+        # out_file_name <- paste(c(feature,"_",start,"_",end,".txt"), collapse="")
+        # write.table(chron_feature, out_file_name, sep="\t")
+        
+}
+# save(Speed_700_890_s, file="Speed_700_890_s_sem.Rda")
+# save(Goodnumber_700_890_s, file="Goodnumber_700_890_s_sem.Rda")
+```
+
+4.2) Calculate feature means and sd/s.e.m.for EACH REPLICATE SEPARATELY for each day:
+(this is super optional, but keeping it here just in case)
+```{r}
+feature_means_per_rep <- function(start=0, end=1260,feature="Speed",variance="sd",norm="self"){
+        time_interval <- dataset[dataset[,"Time"]>start&dataset[,"Time"]<end,]
+        
+  # Remove feature outliers using: [Q1 - 1.5 * IQR, Q3 + 1.5 * IQR] b/c some data isn't normal:          
+        library(plyr)
+        rm_outliers <- ddply(time_interval, .(Strain, FUDR, Day), function(d){ 
+                Q1=quantile(d[,feature], 1/4, na.rm=TRUE)
+                Q3=quantile(d[,feature], 3/4, na.rm=TRUE)
+                IQR=Q3-Q1
+                upper.limit=Q3+1.5*IQR
+                lower.limit=Q1-1.5*IQR
+                d[(d[,feature] - lower.limit)*(upper.limit - d[,feature]) > 0,]
+        })
+        
+# Calculate feature means and variance:
+  # If want SD:
+        if (variance=="sd"){
+          chron_feature <- ddply(rm_outliers, .(Strain,FUDR,Day,PlateNum),function(d){
+              mean = mean(d[,feature],na.rm=TRUE)
+              sd = sd(d[,feature], na.rm=TRUE)
+              c(mean,sd)
+              })
+          colnames(chron_feature) <- c("Strain","FUDR","Day","PlateNum","mean","sd")
+        }
+  # If want SE:       
+        if (variance=="se"){
+          chron_feature <- ddply(rm_outliers, .(Strain,FUDR,Day,PlateNum),function(d){
+              mean = mean(d[,feature],na.rm=TRUE)
+              se=sd(d[,feature], na.rm=TRUE)/sqrt(mean(d[,"Goodnumber"]))
+              N = mean(d[,"Goodnumber"])
+              c(mean,se,N)
+            })  
+          colnames(chron_feature) <- c("Strain","FUDR","Day","PlateNum","mean","se","N")
+        }
+  # Re-format and save feature means and variance dataframe:    
+        chron_feature$Day <- as.numeric(levels(chron_feature$Day))[chron_feature$Day]
+        chron_feature <- chron_feature[complete.cases(chron_feature),] #remove NAs
+        chron_feature$Day <- chron_feature$Day-1 # Set Day 1 as Day 0 
+        chron_feature$Strain <- factor(chron_feature$Strain, levels=c("N2E", "e1368", "e1370"))
+        chron_feature$FUDR <- factor(chron_feature$FUDR, levels=c("with", "without"))
+        do.call("<<-",list(paste(c(feature, "_", start,"_",end,"_s","_per_Plate"), collapse=""), chron_feature))
+        
+        
+  # Normalize feature to day 1 (day 2 if start counting from 0):
+        daily_mean <- ddply(rm_outliers, .(Strain,FUDR,Day,PlateNum),function(d){
+            d1_mean=mean(d[,feature], na.rm=TRUE)
+            })
+        colnames(daily_mean) <- c("Strain","FUDR","Day","PlateNum","d1_mean")
+  # If want to normalize to d1 of each Strain:Bacteria combination:
+      if (norm=="self"){
+        daily_mean <- daily_mean[daily_mean$Day==1,]
+        daily_mean <- subset(daily_mean, select = -Day)
+        rm_outliers <- merge(rm_outliers, daily_mean, by=c("Strain","FUDR","PlateNum"))
+        rm_outliers$norm_to_d1 <- rm_outliers[,feature]/rm_outliers[,"d1_mean"]        
+      }
+  # If want to normalize all features to N2E on FUDR d1:
+      else {
+        daily_mean <- daily_mean[daily_mean$Day==1&daily_mean$Strain=="N2E"&daily_mean$FUDR=="with",] 
+        rm_outliers$norm_to_d1 <- rm_outliers[,feature]/daily_mean[,"d1_mean"]
+      }
+  # If want SD:
+        if (variance=="sd"){
+          chron_feature_norm_d1 <- ddply(rm_outliers, .(Strain, FUDR, Day, PlateNum), summarise, mean = mean(norm_to_d1,na.rm=TRUE), sd = sd(norm_to_d1, na.rm=TRUE))
+        }
+  # if want SE:
+        if (variance=="se"){
+          chron_feature_norm_d1 <- ddply(rm_outliers, .(Strain, FUDR, Day, PlateNum), summarise, mean = mean(norm_to_d1,na.rm=TRUE), se=sd(norm_to_d1, na.rm=TRUE)/sqrt(mean(Goodnumber)), N = mean(Goodnumber))
+        }
+  # Re-format and save feature means and variance dataframe:        
+        chron_feature_norm_d1$Day <- as.numeric(levels(chron_feature_norm_d1$Day))[chron_feature_norm_d1$Day]
+        chron_feature_norm_d1 <- chron_feature_norm_d1[complete.cases(chron_feature_norm_d1),] #remove NAs
+        chron_feature_norm_d1$Day <-  chron_feature_norm_d1$Day-1 # Set Day 1 as Day 0 
+        chron_feature_norm_d1$Strain <- factor(chron_feature_norm_d1$Strain, levels=c("N2E", "e1368", "e1370"))
+        chron_feature_norm_d1$FUDR <- factor(chron_feature_norm_d1$FUDR, levels=c("with", "without"))
+        do.call("<<-",list(paste(c(feature,"_",start,"_",end,"_s","_norm_to_d1","_per_Plate"), collapse=""), chron_feature_norm_d1))
+}
+# save(Speed_700_890_s_per_Plate, file="Speed_700_890_s_per_Plate_sem.Rda")
+save(Goodnumber_700_890_s_per_Plate, file="Goodnumber_700_890_s_per_Plate_sem.Rda")
+```
+
+5) Calculate -FUDR/+FUDR ratio for each day:
+You can compare any two conditions this way (e.g. MUTANT/CONTROL)
+```{r}
+# Calculate
+feature_means_FUDR_norm <- function(start=0, end=1260,feature="Speed",variance="se"){
+      time_interval <- dataset[dataset[,"Time"]>start&dataset[,"Time"]<end,]
+      # Remove feature outliers using: [Q1 - 1.5 * IQR, Q3 + 1.5 * IQR]:          
+            library(plyr)
+            rm_outliers <- ddply(time_interval, .(Strain, FUDR, Day), function(d){ 
+                    Q1=quantile(d[,feature], 1/4, na.rm=TRUE)
+                    Q3=quantile(d[,feature], 3/4, na.rm=TRUE) #This was originally incorrectly set to 2/4, fixed 4/28/15
+                    IQR=Q3-Q1
+                    upper.limit=Q3+1.5*IQR
+                    lower.limit=Q1-1.5*IQR
+                    d[(d[,feature] - lower.limit)*(upper.limit - d[,feature]) > 0,]
+            })
+            
+      # Normalize feature to N2E:
+            daily_mean <- ddply(rm_outliers, .(Strain, FUDR, Day),function(d){
+                d <- d[d[,feature]!=0,]
+                daily_mean=mean(log(d[,feature],2), na.rm=TRUE)
+                })
+            colnames(daily_mean) <- c("Strain","FUDR","Day","daily_mean")
+        
+            daily_mean <- daily_mean[daily_mean$FUDR=="with",]
+            daily_mean <- subset(daily_mean, select = -FUDR)
+            rm_outliers <- merge(rm_outliers, daily_mean, by=c("Day","Strain"))
+            rm_outliers$Log2_norm_to_wFUDR <- log(rm_outliers[,feature],2) - rm_outliers[,"daily_mean"]        
+            
+            rm_outliers <- rm_outliers[rm_outliers$Log2_norm_to_wFUDR!=-Inf,]
+            
+      # If want SD:
+            if (variance=="sd"){
+              chron_feature_norm <- ddply(rm_outliers, .(Strain, FUDR, Day), summarise, mean = mean(Log2_norm_to_wFUDR,na.rm=TRUE), sd = sd(Log2_norm_to_wFUDR, na.rm=TRUE))
+            }
+      # if want SE:
+            if (variance=="se"){
+              chron_feature_norm <- ddply(rm_outliers, .(Strain, FUDR, Day), summarise, mean = mean(Log2_norm_to_wFUDR,na.rm=TRUE), se=sd(Log2_norm_to_wFUDR, na.rm=TRUE)/sqrt(mean(Goodnumber)), N = mean(Goodnumber))
+            }
+      # Re-format and save feature means and variance dataframe:        
+            chron_feature_norm$Day <- as.numeric(levels(chron_feature_norm$Day))[chron_feature_norm$Day]
+            chron_feature_norm <- chron_feature_norm[complete.cases(chron_feature_norm),] #remove NAs
+            chron_feature_norm$Day <-  chron_feature_norm$Day-1 # Set Day 1 as Day 0 
+            chron_feature_norm$Strain <- factor(chron_feature_norm$Strain, levels=c("N2E", "e1368", "e1370"))
+            chron_feature_norm$FUDR <- factor(chron_feature_norm$FUDR, levels=c("with", "without"))
+            do.call("<<-",list(paste(c(feature,"_",start,"_",end,"_s","_norm_to_wFUDR"), collapse=""), chron_feature_norm))
+    
+            #Save as an excel spreadsheet
+            # library(xlsx)
+            # out_file_name <- paste(c(feature,"_",start,"_",end,".txt"), collapse="")
+            # write.table(chron_feature, out_file_name, sep="\t")
+}
+```
+
+6.1) Plot features as a function of age:
+```{r}
+chronological_plot <- function (feature_table){
+      plotting_data <- feature_table
+
+      if (ncol(feature_table)==6){
+        colnames(plotting_data) <- c("Strain","FUDR","Day","mean","variance","N")
+      }
+      if (ncol(feature_table)==5){
+        colnames(plotting_data) <- c("Strain","FUDR","Day","mean","variance")
+      }
+      library(ggplot2)
+      require(grDevices)  
+      # Create a plot title
+      start <- strsplit(deparse(substitute(feature_table)),"_")[[1]][2]
+      end  <- strsplit(deparse(substitute(feature_table)),"_")[[1]][3] 
+      feature <- strsplit(deparse(substitute(feature_table)),"_")[[1]][1] 
+      title <- paste(c(feature, start, "-", end, "s"), collapse=" ")
+      # Make the plot
+      g <- ggplot(data=plotting_data, aes(x = Day, y =mean, color=Strain))  
+      if (grepl("d1",deparse(substitute(feature_table)))){
+              g + 
+                geom_errorbar(data=plotting_data, aes(x=Day, y=mean, ymin=mean-variance, ymax=mean+variance, width=0.5)) + 
+                geom_smooth(stat="identity", aes(linetype=FUDR)) + 
+                geom_point(size=2) + 
+                scale_color_manual(name='', values=c('black','green3','magenta'),labels = c('N2E','daf-2(e1368)','daf-2(e1370)'))+
+                scale_linetype_manual(name='', values=c('solid','dotted'),labels = c('+ FUDR','-FUDR'))+
+                ggtitle(title) +
+                xlab("Days of adulthood") + 
+                ylab(paste(c("Mean", strsplit(deparse(substitute(feature_table)),"_")[[1]][1]," +/- ", colnames(feature_table)[5],"", "vs. day 1"), collapse=" "))+
+                theme(
+                        legend.position = "bottom", 
+                        axis.text = element_text(size = 10))
+      }  
+      else {
+             g + 
+                geom_errorbar(data=plotting_data, aes(x=Day, y=mean, ymin=mean-variance, ymax=mean+variance, width=0.6),size=0.4) + 
+                geom_smooth(stat="identity", aes(linetype=FUDR), size=0.65) + 
+                geom_point(size=1.5) + 
+                scale_color_manual(name='', values=c('black','green3','magenta'),labels = c('N2E','daf-2(e1368)','daf-2(e1370)'))+
+                scale_linetype_manual(name='', values=c('solid','dotted'),labels = c('+ FUDR','-FUDR'))+
+                # scale_x_continuous(limits=c(-0.5,10.5))+
+                ggtitle(title) + 
+                xlab("Days of adulthood") +       
+                ylab(paste(c("Mean",strsplit(deparse(substitute(feature_table)),"_")[[1]][1]," +/- ", colnames(feature_table)[5]), collapse=" "))+
+                # scale_y_continuous(limits=c(0,0.2))
+                theme(
+                        legend.position = "bottom", 
+                        axis.text = element_text(size = 10))
+      }
+        title <- paste(c(deparse(substitute(feature_table)),"_",".pdf"), collapse="")
+        ggsave(title, width=4, height=5, dpi=600)
+}        
+```
+
+7) Plot bar graph showing mean speed on a given day:
+```{r}
+bar_data <- Speed_700_880_s[Speed_700_880_s$Day==1|Speed_700_880_s$Day==2,]
+
+ggplot(data=bar_data, aes(x=Strain, y=mean, fill=Strain))+
+    geom_bar(stat="identity",position=position_dodge(width=0.9)) +  
+    geom_errorbar(data=bar_data, aes(x=Strain, y=mean, ymin=mean-se, ymax=mean+se, width=0.5),position=position_dodge(width=0.9)) + 
+    ggtitle("700-890s")+
+    xlab("Day") +
+    ylab("Unstimulated speed (mm/s) +/- s.e.\n") + 
+    scale_fill_manual(values=c("black","green3","magenta"))+
+    # scale_y_continuous(limits=c(0,0.115), breaks=seq(0,0.115,0.025))+
+    theme_bw()+
+        theme(
+            legend.position = "bottom", 
+            panel.grid.major = element_line(colour = "grey20"),
+            panel.grid.minor = element_blank(),
+            axis.text = element_text(size = 12),
+            axis.ticks=element_blank())+
+    facet_grid(Day~FUDR)
+# ggsave("Bargraphs_Speed_700-890_s_d0-d4.pdf",width = 5, height = 7, dpi=300)
+
+# ggsave("Day0_mean_speed_900_901s_OP50.pdf", width=5, height=5, dpi=600)
+```
+
+8) Calculate p-values using means of trackers: 
+```{r}
+ds <- MeanSpeed_800_890_s_per_Plate
+
+t.test(ds[ds$Day=="1"&ds$Strain=="N2E"&ds$FUDR=="without","Speed"], 
+    ds[ds$Day=="1"&ds$Strain=="e1370"&ds$FUDR=="without","Speed"])
+```
+
